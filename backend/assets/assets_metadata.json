@@ -1,0 +1,15 @@
+{
+  "1": {
+    "name": "balcao_simples",
+    "type": "furniture",
+    "version": "1.0",
+    "file_path": "assets\\balcao_simples.skp",
+    "file_size": 20061,
+    "skp_filename": "balcao_simples.skp",
+    "tags": [
+      "furniture",
+      "sketchup"
+    ],
+    "id": 1
+  }
+}

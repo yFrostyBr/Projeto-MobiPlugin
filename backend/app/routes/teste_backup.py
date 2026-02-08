@@ -1,7 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import os
 import json
@@ -9,7 +9,6 @@ from pathlib import Path
 
 from app.db.database import Base, engine, get_db
 from app.models.db_models import Dimensoes
-from app.supabase_client import supabase_manager
 from app.models.schemas import (
     DimensoesCreate,
     DimensoesResponse,
@@ -177,83 +176,117 @@ def create_drawer(payload: AssemblyDefinition):
     return AssemblyResponse(name="drawer", largura=L, altura=H, profundidade=D, parts=parts)
 
 
+# Mock asset data
+MOCK_ASSETS = {
+    1: AssetResponse(
+        id=1,
+        name="puxador_standard",
+        type="hardware",
+        version="1.0",
+        json_spec=AssetGeometry(
+            vertices=[[0,0,0], [120,0,0], [120,30,0], [0,30,0], [0,0,40], [120,0,40], [120,30,40], [0,30,40]],
+            faces=[[0,1,2,3], [4,7,6,5], [0,4,5,1], [1,5,6,2], [2,6,7,3], [3,7,4,0]],
+            materials=["metal", "metal", "metal", "metal", "metal", "metal"]
+        ),
+        skp_url="https://example.com/assets/puxador_standard.skp",
+        tags=["handle", "metal", "standard"]
+    ),
+    2: AssetResponse(
+        id=2,
+        name="corredicá_lateral",
+        type="hardware",
+        version="1.0",
+        json_spec=None,
+        skp_url="https://example.com/assets/corredicá_lateral.skp",
+        default_params={"length": 450, "load_capacity": "45kg"},
+        tags=["runner", "slide", "hardware"]
+    ),
+    3: AssetResponse(
+        id=3,
+        name="painel_mdf",
+        type="component",
+        version="1.0",
+        json_spec=AssetGeometry(
+            vertices=[[0,0,0], [600,0,0], [600,400,0], [0,400,0], [0,0,18], [600,0,18], [600,400,18], [0,400,18]],
+            faces=[[0,1,2,3], [4,7,6,5], [0,4,5,1], [1,5,6,2], [2,6,7,3], [3,7,4,0]],
+            materials=["mdf", "mdf", "mdf", "mdf", "mdf", "mdf"]
+        ),
+        default_params={"thickness": 18, "material": "MDF"},
+        tags=["panel", "mdf", "wood"]
+    ),
+    4: AssetResponse(
+        id=4,
+        name="balcao_simples",
+        type="furniture",
+        version="1.0",
+        json_spec=None,
+        skp_url="https://firebasestorage.googleapis.com/v0/b/projeto-plubin.appspot.com/o/assets%2Fbalcao_simples.skp?alt=media",
+        default_params={"width": 1200, "height": 900, "depth": 600},
+        tags=["furniture", "balcao", "cabinet"]
+    )
+}
+
+
 @router.get("/assets", response_model=List[AssetResponse])
 def list_assets(asset_type: str = None, limit: int = 100):
-    """Lista assets disponíveis do Supabase. Filtra por tipo se especificado."""
-    try:
-        assets_data = supabase_manager.list_assets(asset_type, limit)
-        
-        assets = []
-        for asset_data in assets_data:
-            # Convert Supabase data to AssetResponse format
-            json_spec = None
-            if asset_data.get('json_spec'):
-                json_spec = AssetGeometry(**asset_data['json_spec'])
-            
-            asset = AssetResponse(
-                id=asset_data['id'],
-                name=asset_data['name'],
-                type=asset_data['type'],
-                version=asset_data.get('version', '1.0'),
-                json_spec=json_spec,
-                skp_url=asset_data.get('skp_url'),
-                skp_base64=asset_data.get('skp_base64'),
-                default_params=asset_data.get('default_params'),
-                tags=asset_data.get('tags', [])
-            )
-            assets.append(asset)
-        
-        return assets
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching assets: {str(e)}")
+    """Lista assets disponíveis. Filtra por tipo se especificado."""
+    assets = list(MOCK_ASSETS.values())
+    if asset_type:
+        assets = [a for a in assets if a.type == asset_type]
+    return assets[:limit]
 
 
 @router.get("/assets/{asset_id}", response_model=AssetResponse)
-def get_asset(asset_id: str):
-    """Busca um asset específico por ID no Supabase."""
-    try:
-        asset_data = supabase_manager.get_asset(asset_id)
-        
-        if not asset_data:
-            raise HTTPException(status_code=404, detail="Asset not found")
-        
-        # Convert Supabase data to AssetResponse format
-        json_spec = None
-        if asset_data.get('json_spec'):
-            json_spec = AssetGeometry(**asset_data['json_spec'])
-        
-        return AssetResponse(
-            id=asset_data['id'],
-            name=asset_data['name'],
-            type=asset_data['type'],
-            version=asset_data.get('version', '1.0'),
-            json_spec=json_spec,
-            skp_url=asset_data.get('skp_url'),
-            skp_base64=asset_data.get('skp_base64'),
-            default_params=asset_data.get('default_params'),
-            tags=asset_data.get('tags', [])
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching asset: {str(e)}")
+def get_asset(asset_id: int):
+    """Busca um asset específico por ID."""
+    if asset_id not in MOCK_ASSETS:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return MOCK_ASSETS[asset_id]
 
 
 @router.get("/assets/{asset_id}/download")
-def download_asset_skp(asset_id: str):
-    """Redireciona para o download do arquivo .skp no Supabase Storage."""
-    try:
-        asset_data = supabase_manager.get_asset(asset_id)
-        
-        if not asset_data:
-            raise HTTPException(status_code=404, detail="Asset not found")
-        
-        if asset_data.get('skp_url'):
-            # Redirect to Supabase Storage URL
-            return RedirectResponse(url=asset_data['skp_url'], status_code=302)
+def download_asset_skp(asset_id: int):
+    """Baixa o arquivo .skp de um asset específico."""
+    if asset_id not in MOCK_ASSETS:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    asset = MOCK_ASSETS[asset_id]
+    
+    # Para o balcao_simples (ID 4), serve o arquivo real
+    if asset_id == 4:
+        skp_path = Path("D:/Projeto Plubin/Balcao Simples.skp")
+        if skp_path.exists():
+            return FileResponse(
+                path=str(skp_path),
+                filename="balcao_simples.skp",
+                media_type="application/octet-stream"
+            )
         else:
-            raise HTTPException(status_code=404, detail="SKP file not available for this asset")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error accessing asset download: {str(e)}")
+            raise HTTPException(status_code=404, detail="SKP file not found")
+    
+    # Para outros assets, retorna erro por enquanto (não temos arquivos reais)
+    raise HTTPException(status_code=404, detail="SKP file not available for this asset")
+
+
+@router.get("/assets/{asset_id}/download")
+def download_asset_skp(asset_id: int):
+    """Baixa o arquivo .skp de um asset específico."""
+    if asset_id not in MOCK_ASSETS:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    
+    asset = MOCK_ASSETS[asset_id]
+    
+    # Para o balcao_simples (ID 4), serve o arquivo real
+    if asset_id == 4:
+        skp_path = Path("D:/Projeto Plubin/Balcao Simples.skp")
+        if skp_path.exists():
+            return FileResponse(
+                path=str(skp_path),
+                filename="balcao_simples.skp",
+                media_type="application/octet-stream"
+            )
+        else:
+            raise HTTPException(status_code=404, detail="SKP file not found")
+    
+    # Para outros assets, retorna erro por enquanto (não temos arquivos reais)
+    raise HTTPException(status_code=404, detail="SKP file not available for this asset")
